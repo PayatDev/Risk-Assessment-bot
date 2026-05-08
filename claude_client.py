@@ -2,7 +2,7 @@
 claude_client.py — น้องริค Claude API Integration
 - Chat mode: sysPrompt + history → next reply
 - Report mode: collected data → A4 risk assessment document
-- Prompt caching on system prompt (cost optimization)
+- Prompt caching on system prompt (cost optimization)  
 """
 
 import os
