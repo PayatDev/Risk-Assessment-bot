@@ -136,7 +136,12 @@ async def process_and_save(session: Session) -> tuple[Path, Path]:
     print(f"[OUTPUT] Extracting data for {session.user_id}...")
     session.data = await extract_data_from_history(session)
 
-    # Step 2: Save chatlog (ก่อน gen report เผื่อ error)
+    # Step 2: Save to Google Sheets
+    from sheets_handler import save_session
+    saved = save_session(session)
+    print(f"[OUTPUT] Sheets save: {'ok' if saved else 'failed'}")
+
+    # Step 3: Save chatlog
     chatlog_path = save_chatlog(session, folder)
 
     # Step 3: Generate report content
