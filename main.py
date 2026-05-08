@@ -1,13 +1,13 @@
 """
 main.py — น้องริค FastAPI App
-LINE Bot webhook → Claude chat → output gen → dead session
+LINE Bot webhook → Claude chat → save chatlog → fixed message → dead session
 """
 
 import os
 import hmac
 import hashlib
 import base64
-import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import httpx
@@ -17,7 +17,6 @@ from fastapi.responses import JSONResponse
 import session_manager as sm
 from session_manager import SessionStatus
 from claude_client import chat_reply
-from output_handler import process_and_save
 from error_handler import (
     RickError, ErrorCode, USER_MESSAGES,
     parse_line_error, log_error, log_info, log_warn,
@@ -27,42 +26,34 @@ LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
 LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
 
-# Message เมื่อ session จบแล้ว (ไม่คุยต่อ)
-DEAD_SESSION_MSG = None  # None = ไม่ตอบเลย (เงียบ) | ใส่ string ถ้าอยากตอบสั้นๆ
-
-# Message เมื่อ budget หมด
-BUDGET_EXCEEDED_MSG = (
-    "ขอโทษนะครับ session นี้ยาวเกินไปแล้ว "
-    "กรุณาเริ่มการประเมินใหม่ได้เลยครับ 🙏"
+# Fixed message หลัง save chatlog สำเร็จ
+COMPLETE_MSG = (
+    "น้องริคทำหน้าที่เสร็จแล้วครับ 😊\n"
+    "รายงานของคุณกำลังจัดทำอยู่\n"
+    "หากมีข้อสงสัยติดต่อคุณพยัตได้โดยตรงครับ"
 )
+
+# Budget limit
+BUDGET_EXCEEDED_MSG = "ขอโทษนะครับ session นี้ยาวเกินไปแล้ว กรุณาเริ่มการประเมินใหม่ได้เลยครับ 🙏"
+
+# Error messages
+ERROR_CLAUDE_MSG = "ขออภัยครับ ระบบขัดข้องชั่วคราว กรุณาส่งข้อความใหม่อีกครั้งครับ"
+ERROR_SAVE_MSG = "ขออภัยครับ เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาติดต่อคุณพยัตโดยตรงครับ"
 
 
 # ─── LINE Signature Verification ─────────────────────────────────────────────
 def verify_line_signature(body: bytes, signature: str) -> bool:
-    mac = hmac.new(
-        LINE_CHANNEL_SECRET.encode("utf-8"),
-        body,
-        hashlib.sha256,
-    ).digest()
-    expected = base64.b64encode(mac).decode("utf-8")
-    return hmac.compare_digest(expected, signature)
+    mac = hmac.new(LINE_CHANNEL_SECRET.encode("utf-8"), body, hashlib.sha256).digest()
+    return hmac.compare_digest(base64.b64encode(mac).decode("utf-8"), signature)
 
 
-# ─── LINE Reply Helper ────────────────────────────────────────────────────────
+# ─── LINE Reply ───────────────────────────────────────────────────────────────
 async def line_reply(reply_token: str, text: str, user_id: str = None) -> bool:
-    """
-    Send reply to LINE user.
-    Returns True on success, False on failure.
-    Does NOT raise — LINE reply failures are non-critical (token expires in 30s anyway).
-    """
     headers = {
         "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "replyToken": reply_token,
-        "messages": [{"type": "text", "text": text}],
-    }
+    payload = {"replyToken": reply_token, "messages": [{"type": "text", "text": text}]}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(LINE_REPLY_URL, headers=headers, json=payload)
@@ -70,49 +61,57 @@ async def line_reply(reply_token: str, text: str, user_id: str = None) -> bool:
             return True
     except Exception as e:
         err = parse_line_error(e, user_id=user_id)
-        # Token expired (400/401) is expected sometimes — log at debug level
         if err.code == ErrorCode.LINE_INVALID_TOKEN:
-            log_warn("LINE reply token expired — skipping", user_id=user_id)
+            log_warn("LINE reply token expired", user_id=user_id)
         else:
-            log_error(err, context={"reply_token": reply_token[:8] + "..."})
+            # LINE API error → log only, ไม่ reply ลูกค้า
+            log_error(err, context={"action": "line_reply_failed"})
         return False
 
 
-# ─── Background: gen output + mark complete ──────────────────────────────────
-async def finalize_session(user_id: str):
+# ─── Background: save chatlog → send fixed message ───────────────────────────
+async def finalize_session(user_id: str, reply_token: str):
     """
-    Background task หลัง flow_complete = True
-    1. gen output files (with retry inside process_and_save)
-    2. mark session complete → bot หยุดตอบ
-    3. TODO: send email with report
+    1. extract email/nickname จาก last messages
+    2. save chatlog ลง Sheets
+    3. ถ้า OK → mark complete → ส่ง fixed message
+    4. ถ้า fail → ส่ง error message ให้ลูกค้า
     """
     session = sm.get(user_id)
     if not session:
-        log_warn("finalize_session: session not found", user_id=user_id)
         return
 
-    try:
-        log_info("Starting output generation", user_id=user_id)
-        chatlog_path, report_path = await process_and_save(session)
-        session.mark_complete(output_path=str(report_path.parent))
-        log_info(
-            "Session finalized",
-            user_id=user_id,
-            folder=str(report_path.parent),
-        )
-        # TODO: await send_email(session.data.email, report_path)
+    # Extract email/nickname อย่างง่ายจาก messages
+    _extract_basic_data(session)
 
-    except RickError as e:
-        log_error(e, context={"phase": "finalize_session"})
-        # Mark timeout so bot doesn't keep responding to a broken session
+    from sheets_handler import save_chatlog
+    saved = save_chatlog(session)
+
+    if saved:
+        session.mark_complete(output_path="sheets")
+        log_info("Session complete — chatlog saved", user_id=user_id)
+        await line_reply(reply_token, COMPLETE_MSG, user_id=user_id)
+    else:
+        # Save failed → แจ้งลูกค้า แต่ยัง mark timeout เพื่อไม่ให้ loop
         session.mark_timeout()
-
-    except Exception as e:
         log_error(
-            RickError(code=ErrorCode.UNKNOWN, message=str(e), user_id=user_id, original=e),
-            context={"phase": "finalize_session_unexpected"},
+            RickError(code=ErrorCode.OUTPUT_SAVE_FAILED,
+                      message="save_chatlog failed", user_id=user_id),
         )
-        session.mark_timeout()
+        await line_reply(reply_token, ERROR_SAVE_MSG, user_id=user_id)
+
+
+def _extract_basic_data(session):
+    """Extract email และ nickname จาก conversation แบบง่ายๆ ไม่เรียก Claude"""
+    for msg in reversed(session.messages):
+        if msg.role == "user" and "@" in msg.content and "." in msg.content:
+            words = msg.content.split()
+            for w in words:
+                if "@" in w and "." in w:
+                    session.data.email = w.strip()
+                    break
+        if session.data.email:
+            break
 
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
@@ -131,6 +130,12 @@ async def health():
     return {"status": "ok", "bot": "น้องริค"}
 
 
+@app.get("/test-sheets")
+async def test_sheets():
+    from sheets_handler import test_connection
+    return test_connection()
+
+
 @app.post("/webhook")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.body()
@@ -139,7 +144,6 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     if not verify_line_signature(body, signature):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-    import json
     data = json.loads(body)
     events = data.get("events", [])
 
@@ -153,21 +157,19 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         reply_token = event["replyToken"]
         user_text = event["message"]["text"].strip()
 
-        # ─── Guard: dead session → เงียบ ─────────────────────────────────────
+        # ─── Guard: dead session → fixed message เสมอ ────────────────────────
         session = sm.get(user_id)
         if session and session.is_dead():
-            if DEAD_SESSION_MSG:
-                await line_reply(reply_token, DEAD_SESSION_MSG, user_id=user_id)
-            log_info("Dead session — ignoring message", user_id=user_id)
+            await line_reply(reply_token, COMPLETE_MSG, user_id=user_id)
+            log_info("Dead session — sent fixed message", user_id=user_id)
             continue
 
-        # ─── Get/Create session ───────────────────────────────────────────────
+        # ─── Get/create session ───────────────────────────────────────────────
         session = sm.get_or_create(user_id)
 
         # ─── Guard: budget exceeded ───────────────────────────────────────────
         if session.should_force_close():
-            log_warn("Budget exceeded — forcing timeout", user_id=user_id,
-                     turns=session.turn_count, tokens=session.total_input_tokens)
+            log_warn("Budget exceeded", user_id=user_id, turns=session.turn_count)
             await line_reply(reply_token, BUDGET_EXCEEDED_MSG, user_id=user_id)
             session.mark_timeout()
             continue
@@ -175,64 +177,41 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         # ─── Add user message ─────────────────────────────────────────────────
         session.add_message("user", user_text)
 
-        # ─── Claude API call ──────────────────────────────────────────────────
+        # ─── Claude API ───────────────────────────────────────────────────────
         try:
             reply_text, flow_complete = await chat_reply(session, user_text)
 
         except RickError as e:
             log_error(e, context={"turn": session.turn_count})
-            # ส่ง user-facing message ถ้ามี
-            user_msg = USER_MESSAGES.get(e.code, USER_MESSAGES[ErrorCode.UNKNOWN])
-            if user_msg:
-                await line_reply(reply_token, user_msg, user_id=user_id)
-            # ถ้า non-retryable (auth error ฯลฯ) → mark timeout
+            # Claude error → แจ้งลูกค้าให้ลองใหม่
+            await line_reply(reply_token, ERROR_CLAUDE_MSG, user_id=user_id)
             if not e.retryable:
                 session.mark_timeout()
             continue
 
         except Exception as e:
-            # Unexpected — catch-all
-            log_error(
-                RickError(code=ErrorCode.UNKNOWN, message=str(e), user_id=user_id, original=e)
-            )
-            await line_reply(
-                reply_token,
-                USER_MESSAGES[ErrorCode.UNKNOWN],
-                user_id=user_id,
-            )
+            log_error(RickError(code=ErrorCode.UNKNOWN, message=str(e),
+                                user_id=user_id, original=e))
+            await line_reply(reply_token, ERROR_CLAUDE_MSG, user_id=user_id)
             continue
 
-        # ─── Validate reply ───────────────────────────────────────────────────
-        if not reply_text:
-            # Claude returned empty after stripping [FLOW_COMPLETE]
-            # Could be normal (flow_complete only) — check
-            if not flow_complete:
-                log_warn("Claude returned empty reply without flow_complete", user_id=user_id)
-
-        # ─── Add assistant reply to session ──────────────────────────────────
+        # ─── Add assistant reply ──────────────────────────────────────────────
         session.add_message("assistant", reply_text)
 
-        # ─── Send reply to LINE ───────────────────────────────────────────────
+        # ─── Reply to user ────────────────────────────────────────────────────
         if reply_text:
             await line_reply(reply_token, reply_text, user_id=user_id)
 
-        # ─── Trigger output generation ────────────────────────────────────────
+        # ─── Flow complete → save chatlog in background ───────────────────────
         if flow_complete:
             log_info("Flow complete — queueing finalize", user_id=user_id,
                      turns=session.turn_count)
-            background_tasks.add_task(finalize_session, user_id)
+            background_tasks.add_task(finalize_session, user_id, reply_token)
 
     return JSONResponse({"status": "ok"})
 
 
-# ─── Dev: test Google Sheets ──────────────────────────────────────────────────
-@app.get("/test-sheets")
-async def test_sheets():
-    from sheets_handler import test_connection
-    return test_connection()
-
-
-# ─── Dev: manual session inspection ──────────────────────────────────────────
+# ─── Dev endpoints ────────────────────────────────────────────────────────────
 @app.get("/sessions/{user_id}")
 async def get_session_info(user_id: str):
     session = sm.get(user_id)
@@ -242,17 +221,13 @@ async def get_session_info(user_id: str):
         "user_id": session.user_id,
         "status": session.status.value,
         "turn_count": session.turn_count,
-        "total_input_tokens_est": session.total_input_tokens,
         "budget_remaining": session.budget_remaining(),
-        "data_collected": {
-            "nickname": session.data.nickname,
-            "email": session.data.email,
-        },
+        "email": session.data.email,
+        "nickname": session.data.nickname,
     }
 
 
 @app.delete("/sessions/{user_id}")
 async def reset_session(user_id: str):
-    """Dev only — reset session สำหรับ testing"""
     sm.delete(user_id)
     return {"status": "deleted", "user_id": user_id}
