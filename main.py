@@ -225,6 +225,13 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
     return JSONResponse({"status": "ok"})
 
 
+# ─── Dev: test Google Sheets ──────────────────────────────────────────────────
+@app.get("/test-sheets")
+async def test_sheets():
+    from sheets_handler import test_connection
+    return test_connection()
+
+
 # ─── Dev: manual session inspection ──────────────────────────────────────────
 @app.get("/sessions/{user_id}")
 async def get_session_info(user_id: str):
