@@ -161,9 +161,12 @@ def parse_claude_error(e: Exception, user_id: str = None) -> RickError:
         status = e.response.status_code
         body = ""
         try:
-            body = e.response.json().get("error", {}).get("message", "")
+            full = e.response.json()
+            log.error(f"Claude API full error response: {full}")
+            body = full.get("error", {}).get("message", "")
         except Exception:
-            pass
+            body = e.response.text
+            log.error(f"Claude API raw error body: {body}")
 
         if status == 401:
             return RickError(
