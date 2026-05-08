@@ -16,7 +16,7 @@ SCOPES = [
 ]
 
 SHEET_ID = os.environ["GOOGLE_SHEET_ID"]
-SHEET_NAME = "น้องริค"  # ชื่อ tab ใน sheet
+SHEET_NAME = "RiskAssessment"  # ชื่อ tab ใน sheet
 
 
 def _get_service():
