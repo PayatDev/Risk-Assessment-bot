@@ -240,8 +240,8 @@ async def chat_reply(session: Session, user_message: str) -> tuple[str, bool]:
     steer = session.should_steer_to_close()
     system = _build_system(steer=steer)
 
+    # session.add_message() ถูกเรียกใน main.py แล้ว — ไม่ต้อง append อีก
     history = session.to_history()
-    history.append({"role": "user", "content": user_message})
 
     raw = await with_retry(
         _call_claude_chat,
