@@ -2,7 +2,7 @@
 claude_client.py — น้องริค Claude API Integration
 - Chat mode: sysPrompt + history → next reply
 - Report mode: collected data → A4 risk assessment document
-- Prompt caching on system prompt (cost optimization)  
+- Prompt caching on system prompt (cost optimization)
 """
 
 import os
@@ -198,6 +198,8 @@ async def _call_claude_chat(system: list, history: list, user_id: str) -> str:
         "system": system,
         "messages": history,
     }
+    # Debug log
+    log_info(f"Sending to Claude — turns={len(history)} last_role={history[-1]['role'] if history else 'none'}", user_id=user_id)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(ANTHROPIC_API_URL, headers=HEADERS, json=payload)
