@@ -9,6 +9,9 @@ from datetime import datetime, timezone, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+import logging
+logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.ERROR)
+
 TZ_THAI = timezone(timedelta(hours=7))
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
