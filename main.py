@@ -8,10 +8,11 @@ import hmac
 import hashlib
 import base64
 import json
+import threading
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 import session_manager as sm
@@ -58,6 +59,10 @@ async def line_push(user_id: str, text: str) -> bool:
         err = parse_line_error(e, user_id=user_id)
         log_error(err, context={"action": "line_push_failed"})
         return False
+
+
+# Completed users — 2 layers: memory + session marker (กัน Railway restart)
+COMPLETED_USERS: dict = {}
 
 
 # ─── LINE Signature Verification ─────────────────────────────────────────────
@@ -107,8 +112,8 @@ async def finalize_session(user_id: str):
 
     if saved:
         session.mark_complete(output_path="sheets")
+        COMPLETED_USERS[user_id] = True  # mark ใน memory
         log_info("Session complete — chatlog saved", user_id=user_id)
-        # Push message ด้วย user_id — ไม่มีหมดอายุ ไม่ต้องรอ reply token
         await line_push(user_id, COMPLETE_MSG)
     else:
         session.mark_timeout()
@@ -155,7 +160,7 @@ async def test_sheets():
 
 
 @app.post("/webhook")
-async def webhook(request: Request, background_tasks: BackgroundTasks):
+async def webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("X-Line-Signature", "")
 
@@ -176,10 +181,10 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         user_text = event["message"]["text"].strip()
 
         # ─── Guard: dead session → fixed message เสมอ ────────────────────────
-        session = sm.get(user_id)
-        if session and session.is_dead():
+        # ─── Guard: completed (memory หรือ session) ──────────────────────────
+        if user_id in COMPLETED_USERS or (sm.get(user_id) and sm.get(user_id).is_dead()):
             await line_reply(reply_token, COMPLETE_MSG, user_id=user_id)
-            log_info("Dead session — sent fixed message", user_id=user_id)
+            log_info("Completed session — sent fixed message", user_id=user_id)
             continue
 
         # ─── Get/create session ───────────────────────────────────────────────
@@ -225,7 +230,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
             log_info("Flow complete — queueing finalize", user_id=user_id,
                      turns=session.turn_count)
             # push message ใน background หลัง save Sheets สำเร็จ
-            background_tasks.add_task(finalize_session, user_id)
+            threading.Thread(target=lambda: __import__('asyncio').run(finalize_session(user_id)), daemon=True).start()
 
     return JSONResponse({"status": "ok"})
 
