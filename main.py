@@ -25,6 +25,7 @@ from error_handler import (
 LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
 LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply"
+LINE_PUSH_URL  = "https://api.line.me/v2/bot/message/push"
 
 # Fixed message หลัง save chatlog สำเร็จ
 COMPLETE_MSG = (
@@ -39,6 +40,24 @@ BUDGET_EXCEEDED_MSG = "ขอโทษนะครับ session นี้ยา
 # Error messages
 ERROR_CLAUDE_MSG = "ขออภัยครับ ระบบขัดข้องชั่วคราว กรุณาส่งข้อความใหม่อีกครั้งครับ"
 ERROR_SAVE_MSG = "ขออภัยครับ เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาติดต่อคุณพยัตโดยตรงครับ"
+
+
+# ─── LINE Push (ไม่มีหมดอายุ ใช้ user_id) ─────────────────────────────────────
+async def line_push(user_id: str, text: str) -> bool:
+    headers = {
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {"to": user_id, "messages": [{"type": "text", "text": text}]}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(LINE_PUSH_URL, headers=headers, json=payload)
+            resp.raise_for_status()
+            return True
+    except Exception as e:
+        err = parse_line_error(e, user_id=user_id)
+        log_error(err, context={"action": "line_push_failed"})
+        return False
 
 
 # ─── LINE Signature Verification ─────────────────────────────────────────────
@@ -69,19 +88,18 @@ async def line_reply(reply_token: str, text: str, user_id: str = None) -> bool:
         return False
 
 
-# ─── Background: save chatlog → send fixed message ───────────────────────────
-async def finalize_session(user_id: str, reply_token: str):
+# ─── Background: save chatlog + push fixed message ───────────────────────────
+async def finalize_session(user_id: str):
     """
-    1. extract email/nickname จาก last messages
-    2. save chatlog ลง Sheets
-    3. ถ้า OK → mark complete → ส่ง fixed message
-    4. ถ้า fail → ส่ง error message ให้ลูกค้า
+    Background task:
+    1. save chatlog ลง Sheets
+    2. push fixed message ด้วย user_id (ไม่มีหมดอายุ)
+    3. mark complete / timeout
     """
     session = sm.get(user_id)
     if not session:
         return
 
-    # Extract email/nickname อย่างง่ายจาก messages
     _extract_basic_data(session)
 
     from sheets_handler import save_chatlog
@@ -90,15 +108,15 @@ async def finalize_session(user_id: str, reply_token: str):
     if saved:
         session.mark_complete(output_path="sheets")
         log_info("Session complete — chatlog saved", user_id=user_id)
-        await line_reply(reply_token, COMPLETE_MSG, user_id=user_id)
+        # Push message ด้วย user_id — ไม่มีหมดอายุ ไม่ต้องรอ reply token
+        await line_push(user_id, COMPLETE_MSG)
     else:
-        # Save failed → แจ้งลูกค้า แต่ยัง mark timeout เพื่อไม่ให้ loop
         session.mark_timeout()
         log_error(
             RickError(code=ErrorCode.OUTPUT_SAVE_FAILED,
                       message="save_chatlog failed", user_id=user_id),
         )
-        await line_reply(reply_token, ERROR_SAVE_MSG, user_id=user_id)
+        await line_push(user_id, ERROR_SAVE_MSG)
 
 
 def _extract_basic_data(session):
@@ -202,11 +220,12 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         if reply_text:
             await line_reply(reply_token, reply_text, user_id=user_id)
 
-        # ─── Flow complete → save chatlog in background ───────────────────────
+        # ─── Flow complete → reply ทันที แล้วค่อย save ใน background ──────────
         if flow_complete:
             log_info("Flow complete — queueing finalize", user_id=user_id,
                      turns=session.turn_count)
-            background_tasks.add_task(finalize_session, user_id, reply_token)
+            # push message ใน background หลัง save Sheets สำเร็จ
+            background_tasks.add_task(finalize_session, user_id)
 
     return JSONResponse({"status": "ok"})
 
