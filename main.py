@@ -259,6 +259,44 @@ async def webhook(request: Request):
     return JSONResponse({"status": "ok"})
 
 
+# ─── Dev: test report agent ──────────────────────────────────────────────────
+@app.get("/test-report")
+async def test_report():
+    """ดึง chatlog row ล่าสุดจาก Sheets แล้วรัน report agent"""
+    import threading, asyncio
+    from sheets_handler import _get_service, SHEET_ID, SHEET_NAME
+
+    try:
+        # ดึง row ล่าสุดจาก Sheets
+        svc = _get_service()
+        result = svc.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=f"{SHEET_NAME}!A:G"
+        ).execute()
+        rows = result.get("values", [])
+        if len(rows) < 2:
+            return {"status": "error", "message": "ไม่มีข้อมูลใน Sheets"}
+
+        last_row = rows[-1]
+        # col G (index 6) = chatlog_json
+        if len(last_row) < 7:
+            return {"status": "error", "message": "ไม่มี chatlog_json ใน row ล่าสุด"}
+
+        chatlog = json.loads(last_row[6])
+        # เพิ่ม nickname จาก col C (index 2)
+        chatlog["nickname"] = last_row[2] if len(last_row) > 2 else "ทดสอบ"
+
+        threading.Thread(
+            target=lambda: asyncio.run(_run_report_agent(chatlog, "TEST")),
+            daemon=True
+        ).start()
+
+        return {"status": "started", "nickname": chatlog["nickname"], "message": "ดู Railway logs"}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # ─── Dev endpoints ────────────────────────────────────────────────────────────
 @app.get("/sessions/{user_id}")
 async def get_session_info(user_id: str):
