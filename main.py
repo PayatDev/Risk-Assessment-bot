@@ -198,6 +198,20 @@ async def test_sheets():
     return test_connection()
 
 
+GREETING_MSG = """สวัสดีครับ ผมน้องริค 😊
+มีหน้าที่เก็บข้อมูลประเมินความพร้อมการคุ้มครองครอบครัวของคุณครับ
+คุณพยัตจะใช้ข้อมูลที่เราคุยกันวันนี้ในการประเมิน
+
+เราจะคุยกันประมาณ 10-15 นาทีนะครับ
+พร้อมแล้ว พิมพ์ "โอเค" ได้เลยครับ"""
+
+
+async def line_push_greeting(user_id: str):
+    """ส่ง greeting หลังแอดเพื่อน"""
+    await asyncio.sleep(1)  # รอ LINE process follow event ก่อน
+    await line_push(user_id, GREETING_MSG)
+
+
 @app.post("/webhook")
 async def webhook(request: Request):
     body = await request.body()
@@ -210,6 +224,16 @@ async def webhook(request: Request):
     events = data.get("events", [])
 
     for event in events:
+        # ─── Follow event (แอดเพื่อน) → ส่ง greeting ────────────────────────────
+        if event.get("type") == "follow":
+            user_id = event["source"]["userId"]
+            log_info("New follow — sending greeting", user_id=user_id)
+            threading.Thread(
+                target=lambda uid=user_id: asyncio.run(line_push_greeting(uid)),
+                daemon=True
+            ).start()
+            continue
+
         if event.get("type") != "message":
             continue
         if event["message"].get("type") != "text":
