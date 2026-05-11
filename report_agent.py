@@ -25,6 +25,7 @@ DRIVE_FOLDER_ID = os.environ["GOOGLE_DRIVE_FOLDER_ID"]
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
@@ -34,13 +35,13 @@ def _drive():
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
 
+    # ไม่ใส่ scopes — ใช้ pattern เดียวกับน้องแพลน
     creds = Credentials(
         token=None,
         refresh_token=os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"],
         client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
         client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
         token_uri="https://oauth2.googleapis.com/token",
-        scopes=SCOPES,
     )
     creds.refresh(Request())
     return build("drive", "v3", credentials=creds)
