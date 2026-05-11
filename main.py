@@ -301,13 +301,15 @@ async def test_report():
         # ดึง nickname จาก col C ก่อน ถ้าไม่มีค่อย extract จาก messages
         nickname = last_row[2] if len(last_row) > 2 and last_row[2] else ""
         if not nickname:
-            import re
-            for msg in chatlog.get("messages", []):
-                if msg.get("role") == "assistant":
-                    m = re.search(r"คุณ([฀-๿a-zA-Z]{1,10})", msg.get("content", ""))
-                    if m:
-                        nickname = m.group(1).strip()
-                        break
+            # หา user message ที่ตอบหลัง bot ถามชื่อเล่น
+            msgs = chatlog.get("messages", [])
+            for i, msg in enumerate(msgs):
+                if msg.get("role") == "assistant" and "ชื่อเล่น" in msg.get("content", ""):
+                    if i + 1 < len(msgs) and msgs[i + 1].get("role") == "user":
+                        candidate = msgs[i + 1].get("content", "").strip()
+                        if len(candidate) <= 10 and "@" not in candidate:
+                            nickname = candidate
+                            break
         chatlog["nickname"] = nickname or "ลูกค้า"
 
         threading.Thread(
