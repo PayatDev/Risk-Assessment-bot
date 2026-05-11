@@ -93,6 +93,18 @@ async def line_reply(reply_token: str, text: str, user_id: str = None) -> bool:
         return False
 
 
+async def _run_report_agent(chatlog: dict, user_id: str):
+    """Wrapper สำหรับเรียก report_agent.run() ใน thread"""
+    try:
+        from report_agent import run as agent_run
+        await agent_run(chatlog)
+        log_info("Report agent completed", user_id=user_id)
+    except Exception as e:
+        log_error(
+            RickError(code=ErrorCode.UNKNOWN, message=f"report_agent failed: {e}", user_id=user_id)
+        )
+
+
 # ─── Background: save chatlog + push fixed message ───────────────────────────
 async def finalize_session(user_id: str):
     """
@@ -115,6 +127,18 @@ async def finalize_session(user_id: str):
         COMPLETED_USERS[user_id] = True  # mark ใน memory
         log_info("Session complete — chatlog saved", user_id=user_id)
         await line_push(user_id, COMPLETE_MSG)
+
+        # Trigger report agent
+        chatlog = {
+            "nickname": session.data.nickname or "",
+            "email": session.data.email or "",
+            "messages": [{"role": m.role, "content": m.content} for m in session.messages],
+        }
+        threading.Thread(
+            target=lambda: asyncio.run(_run_report_agent(chatlog, user_id)),
+            daemon=True
+        ).start()
+
     else:
         session.mark_timeout()
         log_error(
