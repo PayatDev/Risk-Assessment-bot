@@ -305,7 +305,7 @@ async def test_report():
     """ดึง chatlog row ล่าสุดจาก Sheets แล้วรัน report agent"""
     import threading, asyncio
     from sheets_handler import _get_service, SHEET_ID, SHEET_NAME
-
+ 
     try:
         # ดึง row ล่าสุดจาก Sheets
         svc = _get_service()
@@ -316,15 +316,17 @@ async def test_report():
         rows = result.get("values", [])
         if len(rows) < 2:
             return {"status": "error", "message": "ไม่มีข้อมูลใน Sheets"}
-
+ 
         last_row = rows[-1]
         # col G (index 6) = chatlog_json
         if len(last_row) < 7:
             return {"status": "error", "message": "ไม่มี chatlog_json ใน row ล่าสุด"}
-
+ 
         chatlog = json.loads(last_row[6])
-        # ดึง nickname จาก col C ก่อน ถ้าไม่มีค่อย extract จาก messages
+        # ดึง nickname จาก col C, email จาก col D
         nickname = last_row[2] if len(last_row) > 2 and last_row[2] else ""
+        email = last_row[3] if len(last_row) > 3 and last_row[3] else ""
+        chatlog["email"] = email
         if not nickname:
             # หา user message ที่ตอบหลัง bot ถามชื่อเล่น
             msgs = chatlog.get("messages", [])
@@ -336,14 +338,14 @@ async def test_report():
                             nickname = candidate
                             break
         chatlog["nickname"] = nickname or "ลูกค้า"
-
+ 
         threading.Thread(
             target=lambda: asyncio.run(_run_report_agent(chatlog, "TEST")),
             daemon=True
         ).start()
-
+ 
         return {"status": "started", "nickname": chatlog["nickname"], "message": "ดู Railway logs"}
-
+ 
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
