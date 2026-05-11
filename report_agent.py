@@ -13,7 +13,6 @@ import httpx
 from docx import Document
 from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -30,11 +29,20 @@ SCOPES = [
 ]
 
 
-# ─── Google Drive ─────────────────────────────────────────────────────────────
+# ─── Google Drive (OAuth — เหมือนน้องแพลน) ───────────────────────────────────
 def _drive():
-    creds = service_account.Credentials.from_service_account_info(
-        json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"]), scopes=SCOPES
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+
+    creds = Credentials(
+        token=None,
+        refresh_token=os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"],
+        client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=SCOPES,
     )
+    creds.refresh(Request())
     return build("drive", "v3", credentials=creds)
 
 
