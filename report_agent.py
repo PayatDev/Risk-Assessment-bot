@@ -41,12 +41,15 @@ def _drive():
 def create_folder(nickname: str, date_str: str) -> str:
     svc = _drive()
     meta = {
-        "name": f"{nickname}_{date_str}",
+        "name": f"ประเมินความเสี่ยง_คุณ{nickname}_{date_str}",
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [DRIVE_FOLDER_ID],
     }
-    f = svc.files().create(body=meta, fields="id").execute()
-    print(f"[DRIVE] folder: {nickname}_{date_str}")
+    f = svc.files().create(
+        body=meta, fields="id",
+        supportsAllDrives=True
+    ).execute()
+    print(f"[DRIVE] folder: ประเมินความเสี่ยง_คุณ{nickname}_{date_str}")
     return f["id"]
 
 
@@ -57,7 +60,10 @@ def upload_docx(path: str, filename: str, folder_id: str) -> str:
         path,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
-    f = svc.files().create(body=meta, media_body=media, fields="id").execute()
+    f = svc.files().create(
+        body=meta, media_body=media, fields="id",
+        supportsAllDrives=True
+    ).execute()
     print(f"[DRIVE] uploaded: {filename}")
     return f["id"]
 
@@ -335,7 +341,7 @@ def build_docx(nickname: str, date_th: str, content: str, scores: dict, gaps: li
 # ─── Main Pipeline ────────────────────────────────────────────────────────────
 async def run(chatlog: dict):
     nickname = chatlog.get("nickname") or "ลูกค้า"
-    date_str = datetime.now(TZ_THAI).strftime("%Y%m%d")
+    date_str = datetime.now(TZ_THAI).strftime("%d%m%Y")
     date_th  = datetime.now(TZ_THAI).strftime("%-d/%m/%Y")
     filename = f"{nickname}_{date_str}.docx"
 
