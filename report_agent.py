@@ -22,6 +22,8 @@ ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_MODEL = "claude-sonnet-4-20250514"
 DRIVE_FOLDER_ID = os.environ["GOOGLE_DRIVE_FOLDER_ID"]
+LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+PAYAT_USER_ID = "U86c03cd5153459d2dc9ce52adc608147"
 
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
@@ -424,6 +426,26 @@ def build_docx(nickname: str, date_th: str, content: str, scores: dict, gaps: li
     return tmp.name
 
 
+# ─── Notify คุณพยัต ──────────────────────────────────────────────────────────
+def notify_payat(text: str):
+    import urllib.request
+    data = json.dumps({
+        "to": PAYAT_USER_ID,
+        "messages": [{"type": "text", "text": text}]
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.line.me/v2/bot/message/push",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    urllib.request.urlopen(req)
+    print(f"[NOTIFY] LINE sent to Payat")
+
+
 # ─── Main Pipeline ────────────────────────────────────────────────────────────
 async def run(chatlog: dict):
     nickname = chatlog.get("nickname") or "ลูกค้า"
@@ -445,6 +467,17 @@ async def run(chatlog: dict):
         folder_id = create_folder(nickname, date_str)
         file_id   = upload_docx(docx_path, filename, folder_id)
         print(f"[AGENT] Done → {filename} ({file_id})")
+
+        # แจ้งคุณพยัต
+        notify_payat(
+            f"📋 รายงานใหม่พร้อมแล้วครับ\n\n"
+            f"👤 ลูกค้า: คุณ{nickname}\n"
+            f"📊 Overall: {scores.get('overall', 0):.1f}/10 ({scores.get('risk_level', '')})\n"
+            f"🎯 Theme: {scores.get('primary_theme', '')}\n"
+            f"⚠️ ช่องโหว่: {len(gaps)} จุด\n\n"
+            f"📁 ดูใน Drive: ประเมินความเสี่ยง_คุณ{nickname}_{date_str}\n"
+            f"📧 Email ลูกค้า: {chatlog.get('email', '-')}"
+        )
         return file_id
     finally:
         import os as _os
