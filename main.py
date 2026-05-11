@@ -151,6 +151,7 @@ async def finalize_session(user_id: str):
 
 def _extract_basic_data(session):
     """Extract email และ nickname จาก conversation แบบง่ายๆ ไม่เรียก Claude"""
+    # Extract email
     for msg in reversed(session.messages):
         if msg.role == "user" and "@" in msg.content and "." in msg.content:
             words = msg.content.split()
@@ -160,6 +161,19 @@ def _extract_basic_data(session):
                     break
         if session.data.email:
             break
+
+    # Extract nickname จาก assistant message แรก
+    # น้องริคจะพูดถึงชื่อเล่นในช่วงต้นสนทนา
+    for msg in session.messages:
+        if msg.role == "assistant" and session.data.nickname:
+            break
+        if msg.role == "user" and len(msg.content) <= 20:
+            # message สั้นๆ ในช่วงต้น มักเป็นชื่อเล่น
+            if msg == session.messages[0] or session.messages.index(msg) <= 2:
+                candidate = msg.content.strip()
+                # ไม่ใช่ตัวเลข ไม่ใช่ email ไม่ยาวเกิน
+                if candidate and "@" not in candidate and not candidate.isdigit():
+                    session.data.nickname = candidate
 
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
@@ -284,8 +298,17 @@ async def test_report():
             return {"status": "error", "message": "ไม่มี chatlog_json ใน row ล่าสุด"}
 
         chatlog = json.loads(last_row[6])
-        # เพิ่ม nickname จาก col C (index 2)
-        chatlog["nickname"] = last_row[2] if len(last_row) > 2 else "ทดสอบ"
+        # ดึง nickname จาก col C ก่อน ถ้าไม่มีค่อย extract จาก messages
+        nickname = last_row[2] if len(last_row) > 2 and last_row[2] else ""
+        if not nickname:
+            import re
+            for msg in chatlog.get("messages", []):
+                if msg.get("role") == "assistant":
+                    m = re.search(r"คุณ([฀-๿a-zA-Z]{1,10})", msg.get("content", ""))
+                    if m:
+                        nickname = m.group(1).strip()
+                        break
+        chatlog["nickname"] = nickname or "ลูกค้า"
 
         threading.Thread(
             target=lambda: asyncio.run(_run_report_agent(chatlog, "TEST")),
