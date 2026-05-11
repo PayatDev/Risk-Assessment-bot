@@ -199,9 +199,9 @@ async def test_sheets():
 
 
 GREETING_MSG = """สวัสดีครับ ผมน้องริค 😊
-มีหน้าที่เก็บข้อมูลเกี่ยวกับครอบครัวของคุณ
+มีหน้าที่เก็บข้อมูลประเมินความพร้อมการคุ้มครองครอบครัวของคุณ
 
-คุณพยัตจะใช้ข้อมูลที่เราคุยกันวันนี้ในการประเมินความเสี่ยงครับ
+คุณพยัตจะใช้ข้อมูลที่เราคุยกันวันนี้ในการประเมินครับ
 
 เราจะคุยกันประมาณ 10-15 นาทีนะครับ
 พร้อมแล้ว พิมพ์ "โอเค" ได้เลยครับ"""
@@ -305,7 +305,7 @@ async def test_report():
     """ดึง chatlog row ล่าสุดจาก Sheets แล้วรัน report agent"""
     import threading, asyncio
     from sheets_handler import _get_service, SHEET_ID, SHEET_NAME
- 
+
     try:
         # ดึง row ล่าสุดจาก Sheets
         svc = _get_service()
@@ -316,12 +316,12 @@ async def test_report():
         rows = result.get("values", [])
         if len(rows) < 2:
             return {"status": "error", "message": "ไม่มีข้อมูลใน Sheets"}
- 
+
         last_row = rows[-1]
         # col G (index 6) = chatlog_json
         if len(last_row) < 7:
             return {"status": "error", "message": "ไม่มี chatlog_json ใน row ล่าสุด"}
- 
+
         chatlog = json.loads(last_row[6])
         # ดึง nickname จาก col C, email จาก col D
         nickname = last_row[2] if len(last_row) > 2 and last_row[2] else ""
@@ -338,14 +338,15 @@ async def test_report():
                             nickname = candidate
                             break
         chatlog["nickname"] = nickname or "ลูกค้า"
- 
+        chatlog["email"] = last_row[3] if len(last_row) > 3 and last_row[3] else ""
+
         threading.Thread(
             target=lambda: asyncio.run(_run_report_agent(chatlog, "TEST")),
             daemon=True
         ).start()
- 
+
         return {"status": "started", "nickname": chatlog["nickname"], "message": "ดู Railway logs"}
- 
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
