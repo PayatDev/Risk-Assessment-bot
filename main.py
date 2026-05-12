@@ -31,9 +31,8 @@ LINE_PUSH_URL  = "https://api.line.me/v2/bot/message/push"
 
 # Fixed message หลัง save chatlog สำเร็จ
 COMPLETE_MSG = (
-    "ผมเก็บข้อมูลเสร็จแล้วครับ 😊\n"
     "รายงานของคุณกำลังจัดทำอยู่  📊\n"
-    "รอรับรายงานทาง email ได้เลยครับ\n"
+    "รอรับรายงานทาง email ได้เลยครับ 😊\n"
     "หากมีข้อสงสัยติดต่อคุณพยัตได้โดยตรงครับ"
 )
 
