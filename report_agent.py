@@ -266,7 +266,20 @@ async def gen_scores(chatlog: dict) -> dict:
 
 async def gen_content(chatlog: dict, scores: dict) -> str:
     msgs = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in chatlog.get("messages", []))
-    # prompt built above
+    has_children = scores.get("score_4") is not None
+
+    prompt = (
+        f"Chatlog:\n{msgs}\n\n"
+        f"คะแนนแต่ละหมวด (ใส่ในตำแหน่ง [คะแนน: X/10] ให้ตรงตามนี้):\n"
+        f"- หมวด 1 สภาพคล่อง: {scores.get('score_1')}/10\n"
+        f"- หมวด 2 ความคุ้มครองชีวิต: {scores.get('score_2')}/10 (HLV ประมาณ {scores.get('hlv_estimate', 0):,} บาท)\n"
+        f"- หมวด 3 การจัดการมรดก: {scores.get('score_3')}/10\n"
+        f"- หมวด 4 การดูแลลูก: {scores.get('score_4') if has_children else 'ไม่มีลูก — ข้ามหมวดนี้'}\n"
+        f"- หมวด 5 ความพร้อมเอกสาร: {scores.get('score_5')}/10\n"
+        f"- Overall: {scores.get('overall')}/10 — {scores.get('risk_level')}\n"
+        f"- พบช่องโหว่: {len(scores.get('gaps', []))} จุด\n\n"
+        f"เขียน narrative ตามโครงสร้างใน prompt"
+    )
     return await _claude(REPORT_PROMPT, prompt, max_tokens=1200)
 
 
