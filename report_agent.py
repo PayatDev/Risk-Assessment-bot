@@ -278,9 +278,9 @@ async def gen_content(chatlog: dict, scores: dict) -> str:
         f"- หมวด 5 ความพร้อมเอกสาร: {scores.get('score_5')}/10\n"
         f"- Overall: {scores.get('overall')}/10 — {scores.get('risk_level')}\n"
         f"- พบช่องโหว่: {len(scores.get('gaps', []))} จุด\n\n"
-        f"เขียน narrative ตามโครงสร้างใน prompt"
+        f"เขียน narrative ตามโครงสร้างใน prompt\n"        f"สำคัญ: ต้องเขียนครบทุกหมวดจนจบ ห้ามหยุดกลางหมวด ห้ามตัดทิ้ง"
     )
-    return await _claude(REPORT_PROMPT, prompt, max_tokens=1200)
+    return await _claude(REPORT_PROMPT, prompt, max_tokens=2000)
 
 
 # ─── Build .docx ──────────────────────────────────────────────────────────────
