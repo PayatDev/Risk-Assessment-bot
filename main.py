@@ -162,18 +162,15 @@ def _extract_basic_data(session):
         if session.data.email:
             break
 
-    # Extract nickname จาก assistant message แรก
-    # น้องริกจะพูดถึงชื่อเล่นในช่วงต้นสนทนา
-    for msg in session.messages:
-        if msg.role == "assistant" and session.data.nickname:
-            break
-        if msg.role == "user" and len(msg.content) <= 20:
-            # message สั้นๆ ในช่วงต้น มักเป็นชื่อเล่น
-            if msg == session.messages[0] or session.messages.index(msg) <= 2:
-                candidate = msg.content.strip()
-                # ไม่ใช่ตัวเลข ไม่ใช่ email ไม่ยาวเกิน
-                if candidate and "@" not in candidate and not candidate.isdigit():
+    # Extract nickname — หา user message ที่ตอบหลัง bot ถามชื่อเล่น
+    messages = session.messages
+    for i, msg in enumerate(messages):
+        if msg.role == "assistant" and "ชื่อเล่น" in msg.content:
+            if i + 1 < len(messages) and messages[i + 1].role == "user":
+                candidate = messages[i + 1].content.strip()
+                if len(candidate) <= 10 and "@" not in candidate:
                     session.data.nickname = candidate
+                    break
 
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
