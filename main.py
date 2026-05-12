@@ -1,5 +1,5 @@
 """
-main.py — น้องริค FastAPI App
+main.py — น้องริก FastAPI App
 LINE Bot webhook → Claude chat → save chatlog → fixed message → dead session
 """
 
@@ -163,7 +163,7 @@ def _extract_basic_data(session):
             break
 
     # Extract nickname จาก assistant message แรก
-    # น้องริคจะพูดถึงชื่อเล่นในช่วงต้นสนทนา
+    # น้องริกจะพูดถึงชื่อเล่นในช่วงต้นสนทนา
     for msg in session.messages:
         if msg.role == "assistant" and session.data.nickname:
             break
@@ -179,17 +179,17 @@ def _extract_basic_data(session):
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log_info("น้องริค ready 🤖")
+    log_info("น้องริก ready 🤖")
     yield
-    log_info("น้องริค shutting down")
+    log_info("น้องริก shutting down")
 
 
-app = FastAPI(title="น้องริค", lifespan=lifespan)
+app = FastAPI(title="น้องริก", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "bot": "น้องริค"}
+    return {"status": "ok", "bot": "น้องริก"}
 
 
 @app.get("/test-sheets")
@@ -198,10 +198,9 @@ async def test_sheets():
     return test_connection()
 
 
-GREETING_MSG = """สวัสดีครับ ผมน้องริค 😊
-มีหน้าที่เก็บข้อมูลครอบครัวของคุณครับ
-
-คุณพยัตจะใช้ข้อมูลที่เราคุยกันวันนี้ในการประเมินความเสี่ยงต่างๆ
+GREETING_MSG = """สวัสดีครับ ผมน้องริก 😊
+มีหน้าที่เก็บข้อมูลประเมินความพร้อมการคุ้มครองครอบครัวของคุณครับ
+คุณพยัตจะใช้ข้อมูลที่เราคุยกันวันนี้ในการประเมิน
 
 เราจะคุยกันประมาณ 10-15 นาทีนะครับ
 พร้อมแล้ว พิมพ์ "โอเค" ได้เลยครับ"""
