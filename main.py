@@ -4,6 +4,7 @@ LINE Bot webhook → Claude chat → save chatlog → fixed message → dead ses
 """
 
 import os
+import re
 import hmac
 import hashlib
 import base64
@@ -162,15 +163,19 @@ def _extract_basic_data(session):
         if session.data.email:
             break
 
-    # Extract nickname — หา user message ที่ตอบหลัง bot ถามชื่อเล่น
-    messages = session.messages
-    for i, msg in enumerate(messages):
-        if msg.role == "assistant" and "ชื่อเล่น" in msg.content:
-            if i + 1 < len(messages) and messages[i + 1].role == "user":
-                candidate = messages[i + 1].content.strip()
-                if len(candidate) <= 10 and "@" not in candidate:
-                    session.data.nickname = candidate
-                    break
+    # Nickname ถูก extract แบบ real-time จาก [NICKNAME:] signal แล้ว
+    # ถ้ายังไม่มี fallback หา user message หลัง bot ถามชื่อเล่น
+    if not session.data.nickname:
+        messages = session.messages
+        for i, msg in enumerate(messages):
+            if msg.role == "assistant" and "ชื่อเล่น" in msg.content:
+                if i + 1 < len(messages) and messages[i + 1].role == "user":
+                    candidate = messages[i + 1].content.strip()
+                    for suffix in ["ครับ", "ค่ะ", "นะครับ", "นะค่ะ", "จ้า"]:
+                        candidate = candidate.replace(suffix, "").strip()
+                    if candidate and len(candidate) <= 10 and "@" not in candidate:
+                        session.data.nickname = candidate
+                        break
 
 
 # ─── FastAPI App ──────────────────────────────────────────────────────────────
@@ -278,6 +283,12 @@ async def webhook(request: Request):
                                 user_id=user_id, original=e))
             await line_reply(reply_token, ERROR_CLAUDE_MSG, user_id=user_id)
             continue
+
+        # ─── Parse NICKNAME signal ───────────────────────────────────────────
+        nickname_match = re.search(r'\[NICKNAME:([^\]]+)\]', reply_text)
+        if nickname_match:
+            session.data.nickname = nickname_match.group(1).strip()
+            reply_text = re.sub(r'\[NICKNAME:[^\]]+\]', '', reply_text).strip()
 
         # ─── Add assistant reply ──────────────────────────────────────────────
         session.add_message("assistant", reply_text)
