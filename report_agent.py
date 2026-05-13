@@ -301,7 +301,7 @@ async def gen_content(chatlog: dict, scores: dict) -> str:
         f"- พบช่องโหว่: {len(scores.get('gaps', []))} จุด\n\n"
         f"เขียน narrative ตามโครงสร้างใน prompt\n"        f"สำคัญ: ต้องเขียนครบทุกหมวดจนจบ ห้ามหยุดกลางหมวด ห้ามตัดทิ้ง"
     )
-    return await _claude(REPORT_PROMPT, prompt, max_tokens=2500)
+    return await _claude(REPORT_PROMPT, prompt, max_tokens=3500)
 
 
 # ─── Build .docx ──────────────────────────────────────────────────────────────
