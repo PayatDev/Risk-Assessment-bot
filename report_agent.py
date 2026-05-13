@@ -280,7 +280,7 @@ async def gen_content(chatlog: dict, scores: dict) -> str:
  
     prompt = (
         f"Chatlog:\n{msgs}\n\n"
-        f"คะแนนแต่ละหมวด (ใส่ในตำแหน่ง [คะแนน: X/10] ให้ตรงตามนี้):\n"
+        f"คะแนนแต่ละหมวด (ใช้ประกอบการเขียน narrative เท่านั้น ไม่ต้องแสดงในเนื้อหา):\n"
         f"- หมวด 1 สภาพคล่อง: {scores.get('score_1')}/10\n"
         f"- หมวด 2 ความคุ้มครองชีวิต: {scores.get('score_2')}/10 (HLV ประมาณ {scores.get('hlv_estimate', 0):,} บาท)\n"
         f"- หมวด 3 การจัดการมรดก: {scores.get('score_3')}/10\n"
@@ -328,27 +328,6 @@ def score_color(s: int) -> str:
     if s >= 6: return YELLOW
     if s >= 4: return ORANGE
     return RED
- 
- 
-def _parse_content_sections(content: str):
-    """แยก narrative และ tag คะแนนออกจากกัน"""
-    import re
-    sections = []
-    # แยกแต่ละ paragraph
-    parts = re.split(r'(\[คะแนน:[^\]]+\]|\[Overall:[^\]]+\]|\[พบช่องโหว่[^\]]+\])', content)
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        if re.match(r'\[คะแนน:', part):
-            sections.append(("score", part))
-        elif re.match(r'\[Overall:', part):
-            sections.append(("overall", part))
-        elif re.match(r'\[พบช่องโหว่', part):
-            sections.append(("gaps", part))
-        else:
-            sections.append(("text", part))
-    return sections
  
  
 def build_docx(nickname: str, date_th: str, content: str, scores: dict, gaps: list) -> str:
