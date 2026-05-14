@@ -455,40 +455,6 @@ def build_docx(nickname: str, date_th: str, content: str, scores: dict, gaps: li
     para("คุณพยัต จิรสุวรรณพงศ์ AFPT™", bold=True, size=11, color=ACCENT, space_after=2)
     para("นักวางแผนการเงิน · ที่ปรึกษากฎหมาย", size=9, color=FAINT, space_after=6)
 
-    # Hyperlink button
-    from docx.oxml.ns import qn as _qn
-    from docx.oxml import OxmlElement as _oxe
-    LANDING_URL = "https://payatdev.github.io/Landing_Page/"
-    rel_id = doc.part.relate_to(
-        LANDING_URL,
-        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
-        is_external=True
-    )
-    hl_p = doc.add_paragraph()
-    hl_p.paragraph_format.space_before = Pt(0)
-    hl_p.paragraph_format.space_after  = Pt(12)
-    hl_elem = _oxe("w:hyperlink")
-    hl_elem.set(_qn("r:id"), rel_id)
-    hl_run = _oxe("w:r")
-    hl_rpr = _oxe("w:rPr")
-    hl_style = _oxe("w:rStyle")
-    hl_style.set(_qn("w:val"), "Hyperlink")
-    hl_color = _oxe("w:color")
-    hl_color.set(_qn("w:val"), ACCENT)
-    hl_sz = _oxe("w:sz")
-    hl_sz.set(_qn("w:val"), "22")
-    hl_bold = _oxe("w:b")
-    hl_rpr.append(hl_style)
-    hl_rpr.append(hl_color)
-    hl_rpr.append(hl_sz)
-    hl_rpr.append(hl_bold)
-    hl_run.append(hl_rpr)
-    hl_t = _oxe("w:t")
-    hl_t.text = "รับแผนคุ้มครองครอบครัวของคุณ — 1,990 บาท →"
-    hl_run.append(hl_t)
-    hl_elem.append(hl_run)
-    hl_p._p.append(hl_elem)
-
     # Footer note
     para(
         "ข้อมูลทั้งหมดเป็นความลับ · ไม่ใช่คำแนะนำทางกฎหมายหรือการเงิน",
