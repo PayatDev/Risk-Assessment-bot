@@ -66,7 +66,7 @@ def _find_parent_folder_id(svc) -> str:
 def create_folder(nickname: str, date_str: str) -> str:
     svc = _drive()
     parent_id = _find_parent_folder_id(svc)
-    folder_name = f"ประเมินความเสี่ยง_คุณ{nickname}_{date_str}"
+    folder_name = f"{date_str}_ประเมินความเสี่ยง_คุณ{nickname}"
     meta = {
         "name": folder_name,
         "mimeType": "application/vnd.google-apps.folder",
@@ -493,7 +493,7 @@ async def run(chatlog: dict):
     nickname = chatlog.get("nickname") or "ลูกค้า"
     date_str = datetime.now(TZ_THAI).strftime("%d%m%Y")
     date_th  = datetime.now(TZ_THAI).strftime("%-d/%m/%Y")
-    filename = f"{nickname}_{date_str}.docx"
+    filename = f"เอกสารประเมินความเสี่ยง_คุณ{nickname}.docx"
 
     print(f"[AGENT] Starting: {nickname}")
 
